@@ -1,0 +1,2076 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LinkedIn Constellation Network</title>
+  <!-- Libraries -->
+  <script src="https://unpkg.com/graphology@0.25.1/dist/graphology.umd.min.js"></script>
+  <script src="https://unpkg.com/graphology-utils@2.3.1/dist/graphology-utils.min.js"></script>
+  <script src="https://unpkg.com/sigma@2.3.1/build/sigma.min.js"></script>
+  <script src="https://unpkg.com/chroma-js@2.4.2/chroma.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-color: #0b0f14;
+      --panel-bg: rgba(18, 24, 32, 0.92);
+      --panel-border: rgba(255, 255, 255, 0.07);
+      --text-primary: #f5f7fa;
+      --text-secondary: rgba(245, 247, 250, 0.72);
+      --accent: #4da6ff;
+      --danger: #ff6b6b;
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: radial-gradient(circle at center, rgba(30, 43, 62, 0.35), transparent 65%),
+        var(--bg-color);
+      color: var(--text-primary);
+      overflow: hidden;
+    }
+
+    #app {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: stretch;
+      justify-content: stretch;
+    }
+
+    #graph-wrapper {
+      position: relative;
+      flex: 1 1 auto;
+      overflow: hidden;
+    }
+
+    #graph-container {
+      position: absolute;
+      inset: 0;
+    }
+
+    canvas.render-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    #minimap {
+      position: absolute;
+      left: 24px;
+      bottom: 24px;
+      width: 220px;
+      height: 160px;
+      border-radius: 12px;
+      background: rgba(12, 17, 24, 0.85);
+      border: 1px solid var(--panel-border);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+      padding: 12px;
+      backdrop-filter: blur(10px);
+    }
+
+    #minimap canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    #metadata-panel {
+      position: absolute;
+      top: 24px;
+      left: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 18px 24px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(12px);
+      max-width: 360px;
+    }
+
+    #metadata-panel h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: 0.02em;
+    }
+
+    #metadata-panel .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    #metadata-panel .chip {
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      font-size: 12px;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    #metadata-panel .range {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    #controls {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      width: 320px;
+      max-height: calc(100vh - 48px);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 20px 22px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 18px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(14px);
+      overflow-y: auto;
+    }
+
+    #controls h2 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .control-group label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      letter-spacing: 0.02em;
+    }
+
+    .toggle-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .toggle-group button {
+      flex: 1 1 auto;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--panel-border);
+      background: rgba(255, 255, 255, 0.05);
+      color: inherit;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 13px;
+    }
+
+    .toggle-group button.active {
+      background: rgba(77, 166, 255, 0.18);
+      border-color: rgba(77, 166, 255, 0.5);
+      color: #b8dcff;
+      box-shadow: 0 6px 16px rgba(77, 166, 255, 0.25);
+    }
+
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 10px;
+      font-size: 13px;
+    }
+
+    .filter-grid label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    input[type="checkbox"] {
+      accent-color: var(--accent);
+    }
+
+    input[type="search"],
+    input[type="text"],
+    select {
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(10, 14, 19, 0.8);
+      color: inherit;
+      font-size: 14px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    #legend {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #legend-item-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 999px;
+      font-size: 12px;
+    }
+
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+    }
+
+    #tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(8, 11, 16, 0.94);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: 13px;
+      line-height: 1.4;
+      max-width: 300px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      z-index: 20;
+    }
+
+    #tooltip.visible {
+      opacity: 1;
+    }
+
+    #tooltip .title {
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: var(--accent);
+    }
+
+    #tooltip .subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    #tooltip .meta {
+      font-size: 12px;
+      color: var(--text-secondary);
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 2px 8px;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .ghost-btn {
+      flex: 1 1 auto;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: inherit;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 13px;
+    }
+
+    .ghost-btn:hover {
+      border-color: rgba(77, 166, 255, 0.5);
+      color: #b3d8ff;
+    }
+
+    .ghost-btn.active {
+      border-color: rgba(77, 166, 255, 0.6);
+      background: rgba(77, 166, 255, 0.16);
+      color: #d0e8ff;
+      box-shadow: inset 0 0 0 1px rgba(77, 166, 255, 0.3);
+    }
+
+    #export-btn {
+      margin-top: 4px;
+      padding: 10px 14px;
+      width: 100%;
+      border-radius: 12px;
+      border: none;
+      background: linear-gradient(135deg, rgba(77, 166, 255, 0.85), rgba(122, 105, 255, 0.9));
+      color: #0b0f14;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 12px 30px rgba(77, 166, 255, 0.35);
+    }
+
+    #export-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 16px 40px rgba(77, 166, 255, 0.5);
+    }
+
+    .center-label {
+      position: absolute;
+      pointer-events: none;
+      color: rgba(255, 255, 255, 0.9);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 18px;
+      font-weight: 600;
+      text-align: center;
+      text-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+    }
+
+    .center-label span {
+      display: block;
+      font-size: 18px;
+      letter-spacing: 0.16em;
+    }
+
+    .center-label small {
+      display: block;
+      margin-top: 6px;
+      font-size: 11px;
+      letter-spacing: 0.3em;
+      color: rgba(255, 255, 255, 0.45);
+    }
+
+    .sector-labels,
+    .ring-labels {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      color: var(--text-secondary);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .sector-labels span,
+    .ring-labels span {
+      position: absolute;
+      transform-origin: center center;
+      white-space: nowrap;
+    }
+
+    #search-results {
+      max-height: 140px;
+      overflow-y: auto;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      background: rgba(8, 12, 18, 0.92);
+      display: none;
+    }
+
+    #search-results button {
+      width: 100%;
+      background: none;
+      border: none;
+      padding: 8px 12px;
+      text-align: left;
+      color: inherit;
+      cursor: pointer;
+    }
+
+    #search-results button:hover {
+      background: rgba(77, 166, 255, 0.12);
+    }
+
+    .fallback-container {
+      position: absolute;
+      inset: 0;
+      padding: 48px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      background: radial-gradient(circle at center, rgba(40, 55, 78, 0.35), rgba(11, 15, 20, 0.95));
+    }
+
+    .fallback-container h2 {
+      font-size: 24px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin: 0;
+    }
+
+    .fallback-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      justify-content: center;
+      width: min(960px, 100%);
+    }
+
+    .fallback-card {
+      background: rgba(18, 24, 32, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      padding: 18px 22px;
+      width: 280px;
+      box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
+    }
+
+    .fallback-card h3 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .fallback-card ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .fallback-chart {
+      width: 220px;
+      height: 220px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+      padding: 16px;
+    }
+
+    .fallback-chart canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    @media (max-width: 1280px) {
+      #controls {
+        width: 280px;
+      }
+    }
+
+    @media (max-width: 1100px) {
+      #controls {
+        position: static;
+        width: 100%;
+        max-height: none;
+        border-radius: 0;
+        flex-direction: column;
+        order: -1;
+      }
+      #app {
+        flex-direction: column;
+      }
+      #graph-wrapper {
+        height: calc(100vh - 420px);
+      }
+      #metadata-panel {
+        position: static;
+        max-width: none;
+        order: -2;
+      }
+      #minimap {
+        left: 16px;
+        bottom: 16px;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        overflow: auto;
+      }
+      #app {
+        height: auto;
+      }
+      #graph-wrapper {
+        height: 560px;
+      }
+      #controls {
+        gap: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="graph-wrapper">
+      <div id="graph-container"></div>
+      <canvas id="sector-canvas" class="render-layer"></canvas>
+      <canvas id="halo-canvas" class="render-layer"></canvas>
+      <div id="minimap">
+        <canvas id="minimap-canvas" width="220" height="160"></canvas>
+      </div>
+      <div id="metadata-panel">
+        <h1>LinkedIn Constellation</h1>
+        <div class="range" id="metadata-range"></div>
+        <div class="stats" id="metadata-stats"></div>
+      </div>
+      <div id="tooltip"></div>
+    </div>
+    <aside id="controls">
+      <div class="control-group">
+        <h2>Explore</h2>
+        <input id="search" type="search" placeholder="Search name, company, or role" autocomplete="off" />
+        <div id="search-results"></div>
+      </div>
+      <div class="control-group">
+        <label>Color By</label>
+        <div class="toggle-group" id="color-mode">
+          <button data-mode="industry" class="active">Industry</button>
+          <button data-mode="functional_area">Functional Area</button>
+          <button data-mode="seniority">Seniority</button>
+        </div>
+      </div>
+      <div class="control-group">
+        <label>Functional Areas</label>
+        <div class="filter-grid" id="filter-functional"></div>
+      </div>
+      <div class="control-group">
+        <label>Industries</label>
+        <div class="filter-grid" id="filter-industry"></div>
+      </div>
+      <div class="control-group">
+        <label>Seniority</label>
+        <div class="filter-grid" id="filter-seniority"></div>
+      </div>
+      <div class="control-group">
+        <label>Connected Date</label>
+        <div style="display:flex; gap:8px; align-items:center; font-size:12px; color:var(--text-secondary);">
+          <span id="time-min-label"></span>
+          <input type="range" id="time-min" min="0" max="100" value="0" />
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; font-size:12px; color:var(--text-secondary);">
+          <input type="range" id="time-max" min="0" max="100" value="100" />
+          <span id="time-max-label"></span>
+        </div>
+      </div>
+      <div class="control-group">
+        <label>Highlight Recent</label>
+        <div class="button-row" id="highlight-buttons">
+          <button class="ghost-btn" data-days="30">30 days</button>
+          <button class="ghost-btn" data-days="90">90 days</button>
+          <button class="ghost-btn" data-days="365">365 days</button>
+        </div>
+      </div>
+      <div class="control-group" id="legend">
+        <label>Legend</label>
+        <div id="legend-item-list"></div>
+      </div>
+      <button id="export-btn">Export View to PNG</button>
+      <button id="reset-btn" class="ghost-btn">Reset View</button>
+    </aside>
+  </div>
+  <script>
+    /* -------------------------------------------------------------------------- */
+    /*                                 Data Sample                                */
+    /* -------------------------------------------------------------------------- */
+
+    const NETWORK_DATA = {
+      metadata: {
+        total_connections: 16,
+        data_generated_date: "2025-10-01",
+        date_range: {
+          earliest_connection: "2016-03-18",
+          most_recent_connection: "2025-09-29"
+        },
+        summary_statistics: {
+          by_seniority: {
+            "C-Level": 2,
+            "VP/SVP": 2,
+            "Director": 3,
+            "Manager": 4,
+            "Individual Contributor": 3,
+            "Other": 2
+          },
+          by_industry: {
+            Technology: 5,
+            Cybersecurity: 3,
+            Finance: 2,
+            Consulting: 2,
+            Healthcare: 1,
+            Other: 3
+          },
+          by_functional_area: {
+            Executive: 4,
+            Sales: 3,
+            Engineering: 2,
+            Product: 1,
+            Operations: 2,
+            Marketing: 1,
+            Finance: 1,
+            HR: 1,
+            Other: 1
+          }
+        }
+      },
+      /* Replace the sample data below with the full dataset from connections.json */
+      connections: [
+        {
+          full_name: "B. April Loureiro, MBA",
+          company: "Bitsight",
+          position: "Senior Director, Account Management EMEA",
+          linkedin_url: "https://www.linkedin.com/in/aprilloureiro",
+          connected_date: "2025-09-29",
+          categorization: {
+            seniority_level: "Director",
+            industry_sector: "Technology",
+            functional_area: "Executive"
+          }
+        },
+        {
+          full_name: "Rahul Suresh",
+          company: "ClariSort",
+          position: "Chief Strategy Officer",
+          linkedin_url: "https://www.linkedin.com/in/rahulsuresh",
+          connected_date: "2025-07-14",
+          categorization: {
+            seniority_level: "C-Level",
+            industry_sector: "Consulting",
+            functional_area: "Executive"
+          }
+        },
+        {
+          full_name: "Emily Chen",
+          company: "Skyline AI",
+          position: "VP of Product",
+          linkedin_url: "https://www.linkedin.com/in/emily-chen",
+          connected_date: "2024-11-03",
+          categorization: {
+            seniority_level: "VP/SVP",
+            industry_sector: "Technology",
+            functional_area: "Product"
+          }
+        },
+        {
+          full_name: "Marcus Rivera",
+          company: "SentinelOne",
+          position: "Regional Sales Manager",
+          linkedin_url: "https://www.linkedin.com/in/marcus-rivera",
+          connected_date: "2023-08-22",
+          categorization: {
+            seniority_level: "Manager",
+            industry_sector: "Cybersecurity",
+            functional_area: "Sales"
+          }
+        },
+        {
+          full_name: "Priya Patel",
+          company: "Medline",
+          position: "Director of Operations",
+          linkedin_url: "https://www.linkedin.com/in/priya-patel",
+          connected_date: "2022-12-01",
+          categorization: {
+            seniority_level: "Director",
+            industry_sector: "Healthcare",
+            functional_area: "Operations"
+          }
+        },
+        {
+          full_name: "James O'Neill",
+          company: "FinSight Capital",
+          position: "Senior Analyst",
+          linkedin_url: "https://www.linkedin.com/in/james-oneill",
+          connected_date: "2021-05-17",
+          categorization: {
+            seniority_level: "Individual Contributor",
+            industry_sector: "Finance",
+            functional_area: "Finance"
+          }
+        },
+        {
+          full_name: "Aisha Ibrahim",
+          company: "TrustWave",
+          position: "Security Engineer",
+          linkedin_url: "https://www.linkedin.com/in/aisha-ibrahim",
+          connected_date: "2024-04-09",
+          categorization: {
+            seniority_level: "Individual Contributor",
+            industry_sector: "Cybersecurity",
+            functional_area: "Engineering"
+          }
+        },
+        {
+          full_name: "Samantha Wright",
+          company: "Northstar Consulting",
+          position: "Managing Partner",
+          linkedin_url: "https://www.linkedin.com/in/samantha-wright",
+          connected_date: "2023-01-11",
+          categorization: {
+            seniority_level: "C-Level",
+            industry_sector: "Consulting",
+            functional_area: "Executive"
+          }
+        },
+        {
+          full_name: "Miguel Torres",
+          company: "Azure Systems",
+          position: "Engineering Manager",
+          linkedin_url: "https://www.linkedin.com/in/miguel-torres",
+          connected_date: "2022-04-19",
+          categorization: {
+            seniority_level: "Manager",
+            industry_sector: "Technology",
+            functional_area: "Engineering"
+          }
+        },
+        {
+          full_name: "Chloe Martin",
+          company: "BrightLab",
+          position: "Marketing Lead",
+          linkedin_url: "https://www.linkedin.com/in/chloe-martin",
+          connected_date: "2020-06-28",
+          categorization: {
+            seniority_level: "Manager",
+            industry_sector: "Other",
+            functional_area: "Marketing"
+          }
+        },
+        {
+          full_name: "Daniel Wu",
+          company: "Bluefin Cyber",
+          position: "Director of Incident Response",
+          linkedin_url: "https://www.linkedin.com/in/daniel-wu",
+          connected_date: "2019-09-12",
+          categorization: {
+            seniority_level: "Director",
+            industry_sector: "Cybersecurity",
+            functional_area: "Operations"
+          }
+        },
+        {
+          full_name: "Laura Gomez",
+          company: "PeopleFirst",
+          position: "HR Business Partner",
+          linkedin_url: "https://www.linkedin.com/in/laura-gomez",
+          connected_date: "2018-02-25",
+          categorization: {
+            seniority_level: "Manager",
+            industry_sector: "Other",
+            functional_area: "HR"
+          }
+        },
+        {
+          full_name: "Oliver Hansen",
+          company: "Aurora Analytics",
+          position: "Senior Data Scientist",
+          linkedin_url: "https://www.linkedin.com/in/oliver-hansen",
+          connected_date: "2020-11-07",
+          categorization: {
+            seniority_level: "Individual Contributor",
+            industry_sector: "Technology",
+            functional_area: "Engineering"
+          }
+        },
+        {
+          full_name: "Grace Li",
+          company: "Unity Health",
+          position: "VP of Partnerships",
+          linkedin_url: "https://www.linkedin.com/in/grace-li",
+          connected_date: "2017-07-19",
+          categorization: {
+            seniority_level: "VP/SVP",
+            industry_sector: "Healthcare",
+            functional_area: "Executive"
+          }
+        },
+        {
+          full_name: "Noah Bryant",
+          company: "Summit Advisors",
+          position: "Consultant",
+          linkedin_url: "https://www.linkedin.com/in/noah-bryant",
+          connected_date: "2019-02-14",
+          categorization: {
+            seniority_level: "Other",
+            industry_sector: "Consulting",
+            functional_area: "Other"
+          }
+        },
+        {
+          full_name: "Iris Nakamura",
+          company: "Nova Biotech",
+          position: "Finance Manager",
+          linkedin_url: "https://www.linkedin.com/in/iris-nakamura",
+          connected_date: "2016-03-18",
+          categorization: {
+            seniority_level: "Manager",
+            industry_sector: "Healthcare",
+            functional_area: "Finance"
+          }
+        }
+      ]
+    };
+
+    /* -------------------------------------------------------------------------- */
+    /*                               Implementation                               */
+    /* -------------------------------------------------------------------------- */
+
+    (function () {
+      const STORAGE_KEY = "linkedin-constellation-state-v1";
+      const functionalAreaFallback = "Other";
+      const seniorityFallback = "Other";
+      const industryFallback = "Other";
+      const centerNodeId = "me";
+      const centerLabel = "Jason T. Rivard";
+      const centerTitle = "Jason T. Rivard";
+
+      const SENIORITY_ORDER = [
+        "C-Level",
+        "VP/SVP",
+        "Director",
+        "Manager",
+        "Individual Contributor",
+        "Other"
+      ];
+
+      const DEFAULT_COLORS = {
+        Technology: "#3FA9F5",
+        Cybersecurity: "#50E3C2",
+        Finance: "#F8E71C",
+        Consulting: "#BD10E0",
+        Healthcare: "#7ED321",
+        Other: "#FF8F66"
+      };
+
+      const COLOR_PALETTES = {
+        industry: DEFAULT_COLORS,
+        functional_area: {
+          Executive: "#66D9EF",
+          Sales: "#F7B955",
+          Marketing: "#EE6E9F",
+          Engineering: "#9B6BFF",
+          Product: "#4DD0E1",
+          Operations: "#A6E22E",
+          Finance: "#FFD76D",
+          HR: "#FF99C8",
+          Other: "#CCCCCC"
+        },
+        seniority: {
+          "C-Level": "#FF6B6B",
+          "VP/SVP": "#F5A623",
+          Director: "#F8E71C",
+          Manager: "#7ED321",
+          "Individual Contributor": "#50E3C2",
+          Other: "#9B9B9B"
+        }
+      };
+
+      const state = {
+        rawData: null,
+        graph: null,
+        renderer: null,
+        nodes: new Map(),
+        anchors: new Map(),
+        sectors: [],
+        rings: [],
+        filters: {
+          functionalAreas: new Set(),
+          industries: new Set(),
+          seniorities: new Set()
+        },
+        colorMode: "industry",
+        highlightDays: 0,
+        timeRange: {
+          min: null,
+          max: null,
+          currentMin: null,
+          currentMax: null
+        },
+        searchIndex: [],
+        minimap: {
+          canvas: null,
+          ctx: null,
+          scale: 1,
+          bounds: { minX: -1, maxX: 1, minY: -1, maxY: 1 }
+        }
+      };
+
+      function supportsWebGL() {
+        try {
+          const canvas = document.createElement('canvas');
+          return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+        } catch (error) {
+          return false;
+        }
+      }
+
+      const utils = {
+        clamp(value, min, max) {
+          return Math.min(Math.max(value, min), max);
+        },
+        lerp(min, max, t) {
+          return min + (max - min) * t;
+        },
+        stableHash(str) {
+          let hash = 0;
+          if (!str) return 0.5;
+          for (let i = 0; i < str.length; i++) {
+            hash = (hash << 5) - hash + str.charCodeAt(i);
+            hash |= 0;
+          }
+          return Math.abs(hash) / 0xffffffff;
+        },
+        stablePairHash(str) {
+          const h = utils.stableHash(str);
+          const alt = utils.stableHash(str.split("").reverse().join(""));
+          return [h, alt];
+        },
+        toDate(value) {
+          if (!value) return null;
+          const d = new Date(value);
+          return Number.isNaN(d.getTime()) ? null : d;
+        },
+        toEpoch(value) {
+          const d = utils.toDate(value);
+          return d ? d.getTime() : null;
+        },
+        formatDate(value) {
+          if (!value) return "";
+          const d = new Date(value);
+          return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+        },
+        formatShortDate(value) {
+          if (!value) return "";
+          const d = new Date(value);
+          return d.toLocaleDateString(undefined, { year: "numeric", month: "short" });
+        }
+      };
+
+      function loadStateFromStorage() {
+        try {
+          const saved = window.localStorage.getItem(STORAGE_KEY);
+          if (!saved) return;
+          const parsed = JSON.parse(saved);
+          if (parsed.colorMode) state.colorMode = parsed.colorMode;
+          if (Array.isArray(parsed.functionalAreas)) {
+            state.filters.functionalAreas = new Set(parsed.functionalAreas);
+          }
+          if (Array.isArray(parsed.industries)) {
+            state.filters.industries = new Set(parsed.industries);
+          }
+          if (Array.isArray(parsed.seniorities)) {
+            state.filters.seniorities = new Set(parsed.seniorities);
+          }
+          if (parsed.timeRange) {
+            state.timeRange.currentMin = parsed.timeRange.currentMin;
+            state.timeRange.currentMax = parsed.timeRange.currentMax;
+          }
+        } catch (err) {
+          console.warn("Failed to load persisted state", err);
+        }
+      }
+
+      function persistState() {
+        try {
+          window.localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+              colorMode: state.colorMode,
+              functionalAreas: Array.from(state.filters.functionalAreas),
+              industries: Array.from(state.filters.industries),
+              seniorities: Array.from(state.filters.seniorities),
+              timeRange: {
+                currentMin: state.timeRange.currentMin,
+                currentMax: state.timeRange.currentMax
+              }
+            })
+          );
+        } catch (err) {
+          console.warn("Failed to persist state", err);
+        }
+      }
+
+      function sanitizeConnection(entry) {
+        const c = entry || {};
+        const cat = c.categorization || {};
+        const seniority = cat.seniority_level || seniorityFallback;
+        const industry = cat.industry_sector || industryFallback;
+        const functional = cat.functional_area || functionalAreaFallback;
+        const date = utils.toDate(c.connected_date) || new Date();
+        return {
+          id: `${c.full_name || "unknown"}-${c.company || "unknown"}-${c.connected_date || "n/a"}`,
+          full_name: c.full_name || "Unknown",
+          company: c.company || "Unknown",
+          position: c.position || "Unknown",
+          linkedin_url: c.linkedin_url || null,
+          connected_date: date,
+          epoch: date.getTime(),
+          seniority_level: SENIORITY_ORDER.includes(seniority) ? seniority : seniorityFallback,
+          industry_sector: DEFAULT_COLORS[industry] ? industry : industryFallback,
+          functional_area: functional
+        };
+      }
+
+      function ingestData(raw) {
+        const data = raw || NETWORK_DATA;
+        const connections = (data.connections || []).map(sanitizeConnection);
+        const metadata = data.metadata || {};
+
+        state.nodes = new Map();
+        state.anchors = new Map();
+
+        state.rawData = {
+          metadata,
+          connections
+        };
+
+        const minEpoch = Math.min(...connections.map((d) => d.epoch));
+        const maxEpoch = Math.max(...connections.map((d) => d.epoch));
+        state.timeRange.min = minEpoch;
+        state.timeRange.max = maxEpoch;
+        if (state.timeRange.currentMin == null) state.timeRange.currentMin = minEpoch;
+        if (state.timeRange.currentMax == null) state.timeRange.currentMax = maxEpoch;
+
+        buildStatistics();
+      }
+
+      function buildStatistics() {
+        const { connections, metadata } = state.rawData;
+        const byFunctional = {};
+        const byIndustry = {};
+        const bySeniority = {};
+
+        for (const conn of connections) {
+          byFunctional[conn.functional_area] = (byFunctional[conn.functional_area] || 0) + 1;
+          byIndustry[conn.industry_sector] = (byIndustry[conn.industry_sector] || 0) + 1;
+          bySeniority[conn.seniority_level] = (bySeniority[conn.seniority_level] || 0) + 1;
+        }
+
+        state.rawData.statistics = {
+          functional: metadata.summary_statistics?.by_functional_area || byFunctional,
+          industry: metadata.summary_statistics?.by_industry || byIndustry,
+          seniority: metadata.summary_statistics?.by_seniority || bySeniority
+        };
+      }
+
+      function computeSectors() {
+        const counts = state.rawData.statistics.functional;
+        const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        const total = entries.reduce((sum, [, value]) => sum + value, 0);
+        let angle = -Math.PI / 2;
+        const sectors = [];
+
+        for (const [name, count] of entries) {
+          const proportion = total > 0 ? count / total : 1 / entries.length;
+          const span = proportion * Math.PI * 2;
+          const start = angle;
+          const end = angle + span;
+          sectors.push({ name, start, end, mid: start + span / 2, count });
+          angle += span;
+        }
+
+        state.sectors = sectors;
+      }
+
+      function computeRings() {
+        const levels = SENIORITY_ORDER.slice();
+        const innerRadius = 120;
+        const outerRadius = 520;
+        const step = (outerRadius - innerRadius) / (levels.length - 1 || 1);
+        const rings = levels.map((label, index) => {
+          const radius = innerRadius + step * index;
+          return {
+            label,
+            radius,
+            minRadius: index === 0 ? 40 : innerRadius + step * (index - 0.5),
+            maxRadius: index === levels.length - 1 ? outerRadius + step * 0.4 : innerRadius + step * (index + 0.5)
+          };
+        });
+        state.rings = rings;
+      }
+
+      function getSector(name) {
+        return state.sectors.find((sector) => sector.name === name) || state.sectors[state.sectors.length - 1];
+      }
+
+      function getRing(label) {
+        return state.rings.find((ring) => ring.label === label) || state.rings[state.rings.length - 1];
+      }
+
+      function computeNodeAttributes(connection) {
+        const sector = getSector(connection.functional_area);
+        const ring = getRing(connection.seniority_level);
+        const [h1, h2] = utils.stablePairHash(connection.full_name + connection.company + connection.position);
+        const anglePadding = 0.08 * (sector.end - sector.start);
+        const angle = utils.lerp(sector.start + anglePadding, sector.end - anglePadding, h1);
+        const jitterRange = (ring.maxRadius - ring.minRadius) * 0.4;
+        const baseRadius = ring.radius;
+        const radius = utils.clamp(baseRadius + (h2 - 0.5) * jitterRange, ring.minRadius + 8, ring.maxRadius - 8);
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        return {
+          x,
+          y,
+          angle,
+          radius,
+          ring,
+          sector
+        };
+      }
+      function buildGraph() {
+        const Graph = window.graphology;
+        state.graph = new Graph({ multi: false, type: "undirected" });
+
+        const connections = state.rawData.connections;
+
+        state.graph.addNode(centerNodeId, {
+          label: centerLabel,
+          x: 0,
+          y: 0,
+          size: 26,
+          color: "#FFFFFF",
+          importance: "center",
+          originalColor: "#FFFFFF"
+        });
+
+        for (const sector of state.sectors) {
+          const anchorId = `anchor-${sector.name}`;
+          const anchorRadius = 600;
+          const x = Math.cos(sector.mid) * anchorRadius;
+          const y = Math.sin(sector.mid) * anchorRadius;
+          state.graph.addNode(anchorId, {
+            label: sector.name,
+            x,
+            y,
+            size: 2,
+            color: "rgba(255,255,255,0.08)",
+            importance: "anchor",
+            hidden: true
+          });
+          state.anchors.set(anchorId, { sector });
+          state.graph.addEdge(centerNodeId, anchorId, { hidden: true });
+        }
+
+        const chunkSize = 800;
+        let index = 0;
+
+        const processChunk = () => {
+          const slice = connections.slice(index, index + chunkSize);
+          for (const connection of slice) {
+            const attrs = computeNodeAttributes(connection);
+            const id = connection.id;
+            const size = mapSeniorityToSize(connection.seniority_level);
+            const color = resolveColor(connection, state.colorMode);
+            state.graph.addNode(id, {
+              label: connection.full_name,
+              x: attrs.x,
+              y: attrs.y,
+              size,
+              color,
+              originalColor: color,
+              industry: connection.industry_sector,
+              functional_area: connection.functional_area,
+              seniority: connection.seniority_level,
+              epoch: connection.epoch,
+              linkedin: connection.linkedin_url,
+              company: connection.company,
+              position: connection.position
+            });
+            state.nodes.set(id, {
+              connection,
+              attrs,
+              id
+            });
+          }
+          index += chunkSize;
+          if (index < connections.length) {
+            if (typeof requestIdleCallback === "function") {
+              requestIdleCallback(processChunk);
+            } else {
+              setTimeout(processChunk, 16);
+            }
+          } else {
+            finalizeGraph();
+          }
+        };
+
+        processChunk();
+      }
+
+      function mapSeniorityToSize(level) {
+        const index = Math.max(0, SENIORITY_ORDER.indexOf(level));
+        const maxSize = 12;
+        const minSize = 4;
+        const t = 1 - index / (SENIORITY_ORDER.length - 1 || 1);
+        return utils.lerp(minSize, maxSize, t);
+      }
+
+      function resolveColor(connection, mode) {
+        const palette = COLOR_PALETTES[mode] || DEFAULT_COLORS;
+        if (mode === "industry") {
+          return palette[connection.industry_sector] || palette.Other || "#888";
+        }
+        if (mode === "functional_area") {
+          return palette[connection.functional_area] || palette.Other || "#888";
+        }
+        if (mode === "seniority") {
+          return palette[connection.seniority_level] || palette.Other || "#888";
+        }
+        return DEFAULT_COLORS.Other;
+      }
+
+      function finalizeGraph() {
+        if (state.renderer) state.renderer.kill();
+        const container = document.getElementById("graph-container");
+        container.innerHTML = "";
+        const sigmaInstance = new sigma.Sigma(state.graph, container, {
+          allowInvalidContainer: false,
+          renderLabels: false,
+          enableEdgeEvents: false,
+          enableEdgeHoverEvents: false,
+          defaultEdgeType: "line",
+          labelFont: "12px Inter, system-ui",
+          labelColor: { color: "#FFFFFF" },
+          zIndex: true,
+          minCameraRatio: 0.08,
+          maxCameraRatio: 1.8,
+          defaultEdgeColor: "rgba(255,255,255,0.05)",
+          defaultEdgeSize: 0.6,
+          enableCamera: true
+        });
+
+        state.renderer = sigmaInstance;
+        configureReducers();
+        attachEvents();
+        updateLegend();
+        renderMetadata();
+        initializeMinimap();
+        updateFilters();
+        updateCameraToFit();
+        drawSectorsAndRings();
+        buildSearchIndex();
+        refreshHighlight();
+      }
+
+      function configureReducers() {
+        state.renderer.setSetting("nodeReducer", (node, data) => {
+          const newData = { ...data };
+          if (shouldHideNode(data)) {
+            newData.hidden = true;
+            return newData;
+          }
+          const glowState = highlightCache.get(node);
+          if (glowState) {
+            const factor = 1 + glowState.intensity * 0.7;
+            newData.size = data.size * factor;
+            newData.color = chroma(data.color).brighten(0.5).hex();
+          }
+          return newData;
+        });
+
+        state.renderer.setSetting("edgeReducer", () => ({ hidden: true }));
+      }
+
+      const highlightCache = new Map();
+
+      function shouldHideNode(attributes) {
+        if (attributes.importance === "anchor") return true;
+        if (attributes.importance === "center") return false;
+        const { functionalAreas, industries, seniorities } = state.filters;
+        if (functionalAreas.size && !functionalAreas.has(attributes.functional_area)) return true;
+        if (industries.size && !industries.has(attributes.industry)) return true;
+        if (seniorities.size && !seniorities.has(attributes.seniority)) return true;
+        if (attributes.epoch < state.timeRange.currentMin || attributes.epoch > state.timeRange.currentMax) return true;
+        return false;
+      }
+
+      function attachEvents() {
+        const tooltip = document.getElementById("tooltip");
+        const haloCanvas = document.getElementById("halo-canvas");
+        const haloCtx = haloCanvas.getContext("2d");
+        const container = document.getElementById("graph-container");
+
+        const resizeCanvas = () => {
+          const rect = container.getBoundingClientRect();
+          ["sector-canvas", "halo-canvas"].forEach((id) => {
+            const canvas = document.getElementById(id);
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+            canvas.style.width = `${rect.width}px`;
+            canvas.style.height = `${rect.height}px`;
+          });
+          drawSectorsAndRings();
+        };
+
+        window.addEventListener("resize", resizeCanvas);
+        resizeCanvas();
+
+        state.renderer.on("enterNode", ({ node }) => {
+          const data = state.graph.getNodeAttributes(node);
+          if (data.importance === "anchor") return;
+          showTooltip(node, data, tooltip);
+          drawHalo(node, data, haloCtx);
+        });
+
+        state.renderer.on("leaveNode", () => {
+          tooltip.classList.remove("visible");
+          haloCtx.clearRect(0, 0, haloCanvas.width, haloCanvas.height);
+        });
+
+        state.renderer.on("clickNode", ({ node }) => {
+          const data = state.graph.getNodeAttributes(node);
+          if (data.linkedin) {
+            window.open(data.linkedin, "_blank", "noopener");
+          }
+        });
+
+        state.renderer.getCamera().on("updated", () => {
+          drawSectorsAndRings();
+          renderMinimapViewport();
+        });
+      }
+
+      function drawHalo(nodeId, data, ctx) {
+        const { width, height } = ctx.canvas;
+        ctx.clearRect(0, 0, width, height);
+        const ratio = window.devicePixelRatio;
+        const coords = state.renderer.graphToScreen({ x: data.x, y: data.y });
+        const x = coords.x * ratio;
+        const y = coords.y * ratio;
+        const haloRadius = (data.size + 14) * ratio;
+        const centerCoords = state.renderer.graphToScreen({ x: 0, y: 0 });
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(77, 166, 255, 0.35)';
+        ctx.lineWidth = 1.5 * ratio;
+        ctx.moveTo(centerCoords.x * ratio, centerCoords.y * ratio);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, haloRadius);
+        gradient.addColorStop(0, "rgba(77, 166, 255, 0.45)");
+        gradient.addColorStop(1, "rgba(77, 166, 255, 0)");
+        ctx.beginPath();
+        ctx.fillStyle = gradient;
+        ctx.arc(x, y, haloRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(255,255,255,0.45)";
+        ctx.lineWidth = 1.4 * ratio;
+        ctx.arc(x, y, (data.size + 6) * ratio, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      function drawSectorsAndRings() {
+        const canvas = document.getElementById("sector-canvas");
+        const ctx = canvas.getContext("2d");
+        const camera = state.renderer?.getCamera();
+        if (!ctx || !camera) return;
+        const ratio = window.devicePixelRatio;
+        const { width, height } = canvas;
+        ctx.clearRect(0, 0, width, height);
+        const center = state.renderer.graphToScreen({ x: 0, y: 0 });
+        const cx = center.x * ratio;
+        const cy = center.y * ratio;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(ratio / camera.getState().ratio, ratio / camera.getState().ratio);
+        ctx.strokeStyle = "rgba(255,255,255,0.08)";
+        ctx.lineWidth = 1;
+        for (const ring of state.rings) {
+          ctx.beginPath();
+          ctx.arc(0, 0, ring.radius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = "rgba(255,255,255,0.06)";
+        for (const sector of state.sectors) {
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(Math.cos(sector.start) * 620, Math.sin(sector.start) * 620);
+          ctx.stroke();
+        }
+        ctx.restore();
+        positionLabels();
+      }
+
+      function positionLabels() {
+        const container = document.getElementById("graph-container");
+        let sectorLayer = container.querySelector(".sector-labels");
+        let ringLayer = container.querySelector(".ring-labels");
+        if (!sectorLayer) {
+          sectorLayer = document.createElement("div");
+          sectorLayer.className = "sector-labels";
+          container.appendChild(sectorLayer);
+        }
+        if (!ringLayer) {
+          ringLayer = document.createElement("div");
+          ringLayer.className = "ring-labels";
+          container.appendChild(ringLayer);
+        }
+        sectorLayer.innerHTML = "";
+        ringLayer.innerHTML = "";
+        const center = state.renderer.graphToScreen({ x: 0, y: 0 });
+        const cameraRatio = state.renderer.getCamera().getState().ratio;
+        const scale = 1 / cameraRatio;
+
+        for (const sector of state.sectors) {
+          const radius = 640 * scale;
+          const sx = center.x + Math.cos(sector.mid) * radius;
+          const sy = center.y + Math.sin(sector.mid) * radius;
+          const label = document.createElement("span");
+          label.textContent = sector.name;
+          label.style.left = `${sx}px`;
+          label.style.top = `${sy}px`;
+          label.style.transform = `translate(-50%, -50%) rotate(${sector.mid + Math.PI / 2}rad)`;
+          sectorLayer.appendChild(label);
+        }
+
+        for (const ring of state.rings) {
+          const radius = ring.radius * scale;
+          const label = document.createElement("span");
+          label.textContent = ring.label;
+          label.style.left = `${center.x}px`;
+          label.style.top = `${center.y - radius}px`;
+          label.style.transform = "translate(-50%, -50%)";
+          ringLayer.appendChild(label);
+        }
+
+        let centerEl = container.querySelector('.center-label');
+        if (!centerEl) {
+          centerEl = document.createElement('div');
+          centerEl.className = 'center-label';
+          centerEl.innerHTML = `<span>${centerTitle}</span><small>Constellation Hub</small>`;
+          container.appendChild(centerEl);
+        }
+        const scaleClamp = Math.min(1.1, Math.max(0.7, scale));
+        centerEl.style.left = `${center.x}px`;
+        centerEl.style.top = `${center.y}px`;
+        centerEl.style.transform = `translate(-50%, -50%) scale(${scaleClamp})`;
+      }
+
+      function showTooltip(nodeId, attributes, tooltip) {
+        const connection = state.nodes.get(nodeId)?.connection;
+        if (!connection) return;
+        tooltip.innerHTML = `
+          <div class="title">${connection.full_name}</div>
+          <div class="subtitle">${connection.position} · ${connection.company}</div>
+          <div class="meta">
+            <span>Connected</span><span>${utils.formatDate(connection.connected_date)}</span>
+            <span>Seniority</span><span>${connection.seniority_level}</span>
+            <span>Functional</span><span>${connection.functional_area}</span>
+            <span>Industry</span><span>${connection.industry_sector}</span>
+          </div>
+        `;
+        const coords = state.renderer.graphToScreen({ x: attributes.x, y: attributes.y });
+        tooltip.style.left = `${coords.x + 12}px`;
+        tooltip.style.top = `${coords.y - 12}px`;
+        tooltip.classList.add("visible");
+      }
+
+      function buildSearchIndex() {
+        const index = [];
+        state.graph.forEachNode((node, attrs) => {
+          if (attrs.importance === "anchor") return;
+          const connection = state.nodes.get(node)?.connection;
+          if (!connection) return;
+          const haystack = [connection.full_name, connection.company, connection.position]
+            .join(" ")
+            .toLowerCase();
+          index.push({ id: node, text: haystack, display: `${connection.full_name} · ${connection.company}` });
+        });
+        state.searchIndex = index;
+      }
+
+      function setupSearch() {
+        const input = document.getElementById("search");
+        const results = document.getElementById("search-results");
+
+        const performSearch = (value) => {
+          const query = value.trim().toLowerCase();
+          if (!query) {
+            results.style.display = "none";
+            results.innerHTML = "";
+            return;
+          }
+          const matches = state.searchIndex.filter((item) => item.text.includes(query)).slice(0, 12);
+          if (!matches.length) {
+            results.style.display = "none";
+            results.innerHTML = "";
+            return;
+          }
+          results.innerHTML = matches
+            .map((match) => `<button data-id="${match.id}">${match.display}</button>`)
+            .join("");
+          results.style.display = "block";
+        };
+
+        input.addEventListener("input", (event) => performSearch(event.target.value));
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            const query = event.target.value.trim().toLowerCase();
+            if (!query) return;
+            const match = state.searchIndex.find((item) => item.text.includes(query));
+            if (match) {
+              focusNode(match.id);
+              results.style.display = "none";
+              results.innerHTML = "";
+            }
+          }
+        });
+
+        results.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-id]");
+          if (!button) return;
+          focusNode(button.dataset.id);
+          results.style.display = "none";
+          results.innerHTML = "";
+        });
+      }
+
+      function focusNode(nodeId) {
+        const attrs = state.graph.getNodeAttributes(nodeId);
+        if (!attrs) return;
+        const camera = state.renderer.getCamera();
+        camera.animate({ x: attrs.x, y: attrs.y, ratio: 0.22 }, { duration: 600 });
+      }
+
+      function setupColorToggles() {
+        const container = document.getElementById("color-mode");
+        container.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-mode]");
+          if (!button) return;
+          const mode = button.dataset.mode;
+          if (mode === state.colorMode) return;
+          state.colorMode = mode;
+          container.querySelectorAll("button").forEach((btn) => btn.classList.toggle("active", btn === button));
+          persistState();
+          recolorNodes();
+          updateLegend();
+        });
+        container.querySelectorAll("button").forEach((btn) => btn.classList.toggle("active", btn.dataset.mode === state.colorMode));
+      }
+
+      function recolorNodes() {
+        state.graph.forEachNode((node, attrs) => {
+          if (attrs.importance === "anchor") return;
+          const connection = state.nodes.get(node)?.connection;
+          if (!connection) return;
+          const color = resolveColor(connection, state.colorMode);
+          state.graph.setNodeAttribute(node, "color", color);
+          state.graph.setNodeAttribute(node, "originalColor", color);
+        });
+      }
+      function updateLegend() {
+        const legendList = document.getElementById("legend-item-list");
+        legendList.innerHTML = "";
+        const palette = COLOR_PALETTES[state.colorMode];
+        const entries = Object.entries(palette || {}).sort((a, b) => a[0].localeCompare(b[0]));
+        for (const [key, value] of entries) {
+          const item = document.createElement("div");
+          item.className = "legend-item";
+          item.innerHTML = `<span class="legend-swatch" style="background:${value}"></span>${key}`;
+          legendList.appendChild(item);
+        }
+      }
+
+      function createFilterCheckboxes(containerId, values, filterSet) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = values
+          .map((value) => {
+            const id = `${containerId}-${value.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
+            const checked = filterSet.size === 0 || filterSet.has(value);
+            return `
+              <label for="${id}">
+                <input type="checkbox" id="${id}" data-value="${value}" ${checked ? "checked" : ""} />
+                <span>${value}</span>
+              </label>
+            `;
+          })
+          .join("");
+      }
+
+      function updateFiltersUI() {
+        const functionals = Object.keys(state.rawData.statistics.functional);
+        const industries = Object.keys(state.rawData.statistics.industry);
+        const seniorities = SENIORITY_ORDER.slice();
+
+        createFilterCheckboxes("filter-functional", functionals, state.filters.functionalAreas);
+        createFilterCheckboxes("filter-industry", industries, state.filters.industries);
+        createFilterCheckboxes("filter-seniority", seniorities, state.filters.seniorities);
+
+        attachFilterEvents("filter-functional", state.filters.functionalAreas);
+        attachFilterEvents("filter-industry", state.filters.industries);
+        attachFilterEvents("filter-seniority", state.filters.seniorities);
+      }
+
+      function attachFilterEvents(containerId, filterSet) {
+        const container = document.getElementById(containerId);
+        container.addEventListener("change", () => {
+          filterSet.clear();
+          const checkboxes = Array.from(container.querySelectorAll("input[type=checkbox]"));
+          for (const checkbox of checkboxes) {
+            if (checkbox.checked) {
+              filterSet.add(checkbox.dataset.value);
+            }
+          }
+          persistState();
+          updateFilters();
+        });
+      }
+
+      function updateFilters() {
+        if (!state.graph) return;
+        state.graph.forEachNode((node, attrs) => {
+          if (attrs.importance === "anchor") return;
+          const hidden = shouldHideNode(attrs);
+          state.graph.setNodeAttribute(node, "hidden", hidden);
+        });
+        renderMetadata();
+        renderMinimap();
+      }
+
+      function renderMetadata() {
+        const range = document.getElementById("metadata-range");
+        const statsEl = document.getElementById("metadata-stats");
+        const { metadata } = state.rawData;
+        const start = utils.formatDate(metadata.date_range?.earliest_connection || state.timeRange.min);
+        const end = utils.formatDate(metadata.date_range?.most_recent_connection || state.timeRange.max);
+        const visibleCount = Array.from(state.graph.nodes()).filter((node) => {
+          const attrs = state.graph.getNodeAttributes(node);
+          return attrs.importance !== "anchor" && !attrs.hidden;
+        }).length - 1; // subtract center
+
+        range.textContent = `${visibleCount} visible · ${start} – ${end}`;
+
+        statsEl.innerHTML = "";
+        const stats = deriveTopStats();
+        for (const stat of stats) {
+          const chip = document.createElement("div");
+          chip.className = "chip";
+          chip.textContent = stat;
+          statsEl.appendChild(chip);
+        }
+      }
+
+      function deriveTopStats() {
+        const visible = [];
+        state.graph.forEachNode((node, attrs) => {
+          if (attrs.importance === "anchor" || attrs.importance === "center") return;
+          if (attrs.hidden) return;
+          visible.push(attrs);
+        });
+        const byFunctional = {};
+        const byIndustry = {};
+        for (const attrs of visible) {
+          byFunctional[attrs.functional_area] = (byFunctional[attrs.functional_area] || 0) + 1;
+          byIndustry[attrs.industry] = (byIndustry[attrs.industry] || 0) + 1;
+        }
+        const topFunctional = Object.entries(byFunctional).sort((a, b) => b[1] - a[1])[0];
+        const topIndustry = Object.entries(byIndustry).sort((a, b) => b[1] - a[1])[0];
+        const total = visible.length;
+        const stats = [];
+        if (topFunctional) stats.push(`Top Function: ${topFunctional[0]} (${topFunctional[1]})`);
+        if (topIndustry) stats.push(`Top Industry: ${topIndustry[0]} (${topIndustry[1]})`);
+        stats.push(`Total Connections: ${state.rawData.metadata.total_connections || total}`);
+        return stats;
+      }
+
+      function setupTimeSlider() {
+        const minRange = document.getElementById("time-min");
+        const maxRange = document.getElementById("time-max");
+        const minLabel = document.getElementById("time-min-label");
+        const maxLabel = document.getElementById("time-max-label");
+
+        const updateLabels = () => {
+          minLabel.textContent = utils.formatShortDate(state.timeRange.currentMin);
+          maxLabel.textContent = utils.formatShortDate(state.timeRange.currentMax);
+        };
+
+        const updateFromRanges = (evt) => {
+          const minPercent = Number(minRange.value) / 100;
+          const maxPercent = Number(maxRange.value) / 100;
+          if (minPercent > maxPercent) {
+            if (evt?.target === minRange) {
+              maxRange.value = minRange.value;
+            } else {
+              minRange.value = maxRange.value;
+            }
+          }
+          state.timeRange.currentMin = Math.floor(utils.lerp(state.timeRange.min, state.timeRange.max, Number(minRange.value) / 100));
+          state.timeRange.currentMax = Math.floor(utils.lerp(state.timeRange.min, state.timeRange.max, Number(maxRange.value) / 100));
+          updateLabels();
+          persistState();
+          updateFilters();
+        };
+
+        minRange.oninput = updateFromRanges;
+        maxRange.oninput = updateFromRanges;
+
+        minRange.value = 0;
+        maxRange.value = 100;
+        if (state.timeRange.currentMin != null) {
+          minRange.value = ((state.timeRange.currentMin - state.timeRange.min) / (state.timeRange.max - state.timeRange.min)) * 100;
+        }
+        if (state.timeRange.currentMax != null) {
+          maxRange.value = ((state.timeRange.currentMax - state.timeRange.min) / (state.timeRange.max - state.timeRange.min)) * 100;
+        }
+        updateLabels();
+      }
+
+      function setupHighlightButtons() {
+        const container = document.getElementById("highlight-buttons");
+        container.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-days]");
+          if (!button) return;
+          state.highlightDays = Number(button.dataset.days);
+          container.querySelectorAll("button").forEach((btn) => btn.classList.toggle("active", btn === button));
+          refreshHighlight();
+        });
+      }
+
+      function refreshHighlight() {
+        highlightCache.clear();
+        if (!state.highlightDays) {
+          state.renderer?.refresh();
+          return;
+        }
+        const now = state.timeRange.max;
+        const threshold = now - state.highlightDays * 24 * 60 * 60 * 1000;
+        state.graph.forEachNode((node, attrs) => {
+          if (attrs.importance === "anchor" || attrs.importance === "center") return;
+          if (attrs.epoch >= threshold) {
+            const intensity = utils.clamp((attrs.epoch - threshold) / (state.highlightDays * 24 * 60 * 60 * 1000), 0, 1);
+            highlightCache.set(node, { intensity });
+          }
+        });
+        state.renderer?.refresh();
+      }
+
+      function initializeMinimap() {
+        const canvas = document.getElementById("minimap-canvas");
+        const ctx = canvas.getContext("2d");
+        state.minimap.canvas = canvas;
+        state.minimap.ctx = ctx;
+        renderMinimap();
+      }
+
+      function renderMinimap() {
+        const { canvas, ctx } = state.minimap;
+        if (!canvas || !ctx) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const padding = 16;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+        state.graph.forEachNode((node, attrs) => {
+          if (attrs.importance === "anchor" || attrs.importance === "center") return;
+          minX = Math.min(minX, attrs.x);
+          maxX = Math.max(maxX, attrs.x);
+          minY = Math.min(minY, attrs.y);
+          maxY = Math.max(maxY, attrs.y);
+        });
+        const width = maxX - minX || 1;
+        const height = maxY - minY || 1;
+        const scale = Math.min((canvas.width - padding * 2) / width, (canvas.height - padding * 2) / height);
+        state.minimap.scale = scale;
+        state.minimap.bounds = { minX, maxX, minY, maxY };
+
+        renderMinimapViewport();
+      }
+
+      function renderMinimapViewport() {
+        const { canvas, ctx, scale, bounds } = state.minimap;
+        if (!canvas || !ctx) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.scale(scale, scale);
+        ctx.translate(-(bounds.minX + bounds.maxX) / 2, -(bounds.minY + bounds.maxY) / 2);
+
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+        state.graph.forEachNode((node, attrs) => {
+          if (attrs.importance === "anchor" || attrs.importance === "center" || attrs.hidden) return;
+          ctx.beginPath();
+          ctx.arc(attrs.x, attrs.y, Math.max(1.2, attrs.size * 0.4), 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        const camera = state.renderer?.getCamera();
+        if (camera) {
+          const camState = camera.getState();
+          const viewWidth = (canvas.width / scale) * camState.ratio;
+          const viewHeight = (canvas.height / scale) * camState.ratio;
+          ctx.strokeStyle = "rgba(77, 166, 255, 0.9)";
+          ctx.lineWidth = 2 / scale;
+          ctx.strokeRect(
+            camState.x - viewWidth / 2,
+            camState.y - viewHeight / 2,
+            viewWidth,
+            viewHeight
+          );
+        }
+
+        ctx.restore();
+      }
+
+      function exportCurrentView() {
+        const width = 1600;
+        const height = 1200;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        const bg = getComputedStyle(document.body).getPropertyValue('--bg-color') || '#0b0f14';
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.save();
+        ctx.translate(width / 2, height / 2);
+        const scale = Math.min(width, height) / 1600;
+        ctx.scale(scale, scale);
+        state.graph.forEachNode((node, attrs) => {
+          if (attrs.importance === 'anchor' || attrs.hidden) return;
+          ctx.beginPath();
+          ctx.fillStyle = attrs.color || '#FFFFFF';
+          ctx.globalAlpha = attrs.importance === 'center' ? 1 : 0.9;
+          ctx.arc(attrs.x, attrs.y, (attrs.size || 6) * 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        });
+        ctx.restore();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '28px Inter, sans-serif';
+        ctx.fillText('LinkedIn Constellation', 48, 60);
+        ctx.font = '16px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillText(`Exported ${new Date().toLocaleString()}`, 48, 88);
+
+        ctx.font = '16px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        let legendY = 140;
+        ctx.fillText('Legend', 48, legendY);
+        legendY += 24;
+        const palette = COLOR_PALETTES[state.colorMode] || {};
+        Object.entries(palette).forEach(([label, color]) => {
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(60, legendY - 6, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,0.9)';
+          ctx.fillText(label, 78, legendY - 2);
+          legendY += 24;
+        });
+
+        const link = document.createElement('a');
+        link.download = `linkedin-constellation-${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }
+
+      function setupExportButton() {
+        const button = document.getElementById('export-btn');
+        if (button) button.addEventListener('click', exportCurrentView);
+      }
+
+      function setupResetButton() {
+        const reset = document.getElementById('reset-btn');
+        if (!reset) return;
+        reset.addEventListener('click', () => {
+          state.filters.functionalAreas.clear();
+          state.filters.industries.clear();
+          state.filters.seniorities.clear();
+          state.colorMode = 'industry';
+          state.highlightDays = 0;
+          state.timeRange.currentMin = state.timeRange.min;
+          state.timeRange.currentMax = state.timeRange.max;
+          persistState();
+          updateFiltersUI();
+          const colorContainer = document.getElementById('color-mode');
+          if (colorContainer) {
+            colorContainer.querySelectorAll('button').forEach((btn) => {
+              btn.classList.toggle('active', btn.dataset.mode === 'industry');
+            });
+          }
+          document.querySelectorAll('#highlight-buttons .ghost-btn').forEach((btn) => btn.classList.remove('active'));
+          recolorNodes();
+          updateLegend();
+          setupTimeSlider();
+          refreshHighlight();
+          updateFilters();
+          updateCameraToFit();
+        });
+      }
+
+      function initializeUI() {
+        loadStateFromStorage();
+        computeSectors();
+        computeRings();
+        buildGraph();
+        updateFiltersUI();
+        setupSearch();
+        setupColorToggles();
+        setupTimeSlider();
+        setupHighlightButtons();
+        setupExportButton();
+        setupResetButton();
+      }
+
+      function renderFallbackSummary() {
+        const controls = document.getElementById("controls");
+        if (controls) controls.style.display = 'none';
+        const wrapper = document.getElementById("graph-wrapper");
+        wrapper.innerHTML = '';
+
+        const container = document.createElement('div');
+        container.className = 'fallback-container';
+        container.innerHTML = `<h2>LinkedIn Constellation</h2><p style="max-width:520px;color:rgba(255,255,255,0.7);font-size:14px;">Your browser does not support WebGL, so an interactive constellation cannot be rendered. Explore the summary insights instead.</p>`;
+
+        const summaryWrapper = document.createElement('div');
+        summaryWrapper.className = 'fallback-summary';
+
+        const overviewCard = document.createElement('div');
+        overviewCard.className = 'fallback-card';
+        const totalConnections = state.rawData.metadata.total_connections || state.rawData.connections.length;
+        const dateRange = state.rawData.metadata.date_range || {};
+        overviewCard.innerHTML = `
+          <h3>Overview</h3>
+          <ul>
+            <li>Total Connections: <strong>${totalConnections}</strong></li>
+            <li>Date Range: ${utils.formatDate(dateRange.earliest_connection || state.timeRange.min)} – ${utils.formatDate(dateRange.most_recent_connection || state.timeRange.max)}</li>
+            <li>Latest Data: ${utils.formatDate(state.rawData.metadata.data_generated_date)}</li>
+          </ul>
+        `;
+        summaryWrapper.appendChild(overviewCard);
+
+        summaryWrapper.appendChild(createDonutCard('By Functional Area', state.rawData.statistics.functional, 'functional_area'));
+        summaryWrapper.appendChild(createDonutCard('By Industry', state.rawData.statistics.industry, 'industry'));
+        summaryWrapper.appendChild(createDonutCard('By Seniority', state.rawData.statistics.seniority, 'seniority'));
+
+        container.appendChild(summaryWrapper);
+        wrapper.appendChild(container);
+      }
+
+      function createDonutCard(title, data, paletteKey) {
+        const card = document.createElement('div');
+        card.className = 'fallback-card';
+        card.innerHTML = `<h3>${title}</h3>`;
+        const chartWrapper = document.createElement('div');
+        chartWrapper.className = 'fallback-chart';
+        const canvas = document.createElement('canvas');
+        canvas.width = 220;
+        canvas.height = 220;
+        chartWrapper.appendChild(canvas);
+        card.appendChild(chartWrapper);
+        drawFallbackDonut(canvas, data, COLOR_PALETTES[paletteKey] || DEFAULT_COLORS);
+        const list = document.createElement('ul');
+        for (const [label, value] of extractTopList(data)) {
+          const percent = computePercent(value, data);
+          const formatted = percent ? ` (${percent}%)` : '';
+          const item = document.createElement('li');
+          item.textContent = `${label}: ${value}${formatted}`;
+          list.appendChild(item);
+        }
+        card.appendChild(list);
+        return card;
+      }
+
+      function computePercent(value, data) {
+        const total = Object.values(data || {}).reduce((sum, n) => sum + Number(n || 0), 0);
+        if (!total) return 0;
+        return Math.round((value / total) * 100);
+      }
+
+      function extractTopList(data) {
+        return Object.entries(data || {})
+          .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+          .slice(0, 5);
+      }
+
+      function drawFallbackDonut(canvas, data, palette) {
+        const ctx = canvas.getContext('2d');
+        const entries = Object.entries(data || {}).filter(([, value]) => Number(value) > 0);
+        if (!entries.length) {
+          ctx.fillStyle = 'rgba(255,255,255,0.4)';
+          ctx.font = '14px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('No data', canvas.width / 2, canvas.height / 2);
+          return;
+        }
+        const total = entries.reduce((sum, [, value]) => sum + Number(value), 0);
+        const radius = Math.min(canvas.width, canvas.height) / 2 - 16;
+        let start = -Math.PI / 2;
+        entries.forEach(([label, value], index) => {
+          const proportion = Number(value) / total;
+          const end = start + proportion * Math.PI * 2;
+          const color = palette[label] || chroma.scale('Set2')(index / Math.max(1, entries.length - 1)).hex();
+          ctx.beginPath();
+          ctx.moveTo(canvas.width / 2, canvas.height / 2);
+          ctx.fillStyle = color;
+          ctx.arc(canvas.width / 2, canvas.height / 2, radius, start, end);
+          ctx.closePath();
+          ctx.fill();
+          start = end;
+        });
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(11, 15, 20, 0.92)';
+        ctx.arc(canvas.width / 2, canvas.height / 2, radius * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.font = '16px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(total, canvas.width / 2, canvas.height / 2 - 8);
+        ctx.font = '11px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.fillText('TOTAL', canvas.width / 2, canvas.height / 2 + 12);
+      }
+
+      function updateFiltersAndRefresh() {
+        recolorNodes();
+        updateFilters();
+        refreshHighlight();
+      }
+
+      function load(initialData) {
+        ingestData(initialData || NETWORK_DATA);
+        initializeUI();
+      }
+
+      window.loadData = function (data) {
+        ingestData(data || NETWORK_DATA);
+        initializeUI();
+      };
+
+      document.addEventListener("DOMContentLoaded", () => {
+        if (!supportsWebGL()) {
+          ingestData(NETWORK_DATA);
+          renderFallbackSummary();
+          return;
+        }
+        load();
+      });
+
+    })();
+  </script>
+</body>
+</html>
